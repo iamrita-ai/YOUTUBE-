@@ -312,11 +312,17 @@ async def help_cmd(client, m):
 
 
 @bot.on_message(filters.private & filters.text & ~filters.command(["start", "help"]))
+@bot.on_message(filters.private & filters.text & ~filters.command(["start", "help"]))
 async def yt_handler(client, m):
     if not await ensure_subscribed(client, m):
         return
 
     text = m.text.strip()
+
+    # Apne hi error messages ko ignore karo (spam se bacho)
+    if text.startswith("❌"):
+        return
+
     if not is_youtube_link(text):
         return await m.reply_text(
             "❌ Yeh YouTube link nahi lag raha.\n"
@@ -332,33 +338,29 @@ async def yt_handler(client, m):
 
     title = info.get("title") or "YouTube Video"
     thumb = info.get("thumbnail")
-    formats = pick_quality_formats(info)
 
+    # Yaha se video ka ID lenge (yt-dlp hamesha 'id' deta hai)
+    video_id = info.get("id")
+    if not video_id:
+        return await m.reply_text("❌ Is video ka ID nahi mil paya.")
+
+    formats = pick_quality_formats(info)
     if not formats:
         return await m.reply_text(
             "❌ Is video ke liye 360p/480p/720p jaisa koi usable format nahi mila.\n"
             "Koi aur video try karo."
         )
 
-    job_id = secrets.token_urlsafe(8)
-    YT_JOBS[job_id] = {
-        "user_id": m.from_user.id,
-        "url": text,
-        "title": title,
-        "thumb": thumb,
-        "formats": formats,
-        "time": int(time.time()),
-    }
-
     buttons = []
     row = []
     for q in ["360", "480", "720"]:
         if q in formats:
-            row.append(InlineKeyboardButton(f"{q}p", callback_data=f"ytq|{job_id}|{q}"))
+            # Yahan job-id ki jagah sirf video_id bhej rahe hain
+            row.append(InlineKeyboardButton(f"{q}p", callback_data=f"ytq|{video_id}|{q}"))
     if row:
         buttons.append(row)
     buttons.append(
-        [InlineKeyboardButton("❌ Cancel", callback_data=f"ytq_cancel|{job_id}")]
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"ytq_cancel|{video_id}")]
     )
     kb = InlineKeyboardMarkup(buttons)
 
