@@ -23,6 +23,25 @@ FORCE_LINK = os.environ.get("FORCE_LINK")  # e.g. "https://t.me/serenaunzipbot"
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+# ===== OPTIONAL YT COOKIES + USER-AGENT =====
+
+# Yaha poora Netscape cookie file ka text aayega
+# (tumne jo bheja hai, woh sab lines)
+YT_COOKIES_STR = os.environ.get("YT_COOKIES", "").strip()
+
+YT_COOKIE_FILE = None
+if YT_COOKIES_STR:
+    YT_COOKIE_FILE = "yt_cookies.txt"
+    with open(YT_COOKIE_FILE, "w", encoding="utf-8") as f:
+        f.write(YT_COOKIES_STR)
+
+# Custom User-Agent (YouTube ko normal browser jaisa lagne ke liye)
+YT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
 # ========== BOT + FLASK ==========
 bot = Client(
     "yt-quality-bot",
@@ -147,11 +166,29 @@ async def extract_yt_info(url: str):
             "quiet": True,
             "skip_download": True,
             "noplaylist": True,
+            "geo_bypass": True,
+            "http_headers": {
+                "User-Agent": YT_USER_AGENT,
+            },
         }
+        if YT_COOKIE_FILE:
+            ydl_opts["cookiefile"] = YT_COOKIE_FILE
+
         with YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
-    return await loop.run_in_executor(None, _extract)
+    try:
+        return await loop.run_in_executor(None, _extract)
+    except Exception as e:
+        msg = str(e)
+        if ("Sign in to confirm you’re not a bot" in msg) or \
+           ("Sign in to confirm you're not a bot" in msg):
+            raise Exception(
+                "Ye YouTube video login/cookies ke bina download nahi ho sakta.\n"
+                "YouTube ne 'not a bot' protection laga diya hai.\n"
+                "Normal public video try karo, ya owner YT_COOKIES env set kare."
+            )
+        raise Exception(msg)
 
 
 def pick_quality_formats(info: dict):
@@ -201,13 +238,17 @@ def pick_quality_formats(info: dict):
 
 async def download_direct(url, dest, status_msg, title, headers=None):
     start = time.time()
-    session_headers = headers or {}
+    session_headers = headers.copy() if headers else {}
+    session_headers.setdefault("User-Agent", YT_USER_AGENT)
+
     async with aiohttp.ClientSession(headers=session_headers) as sess:
         async with sess.get(url) as resp:
             if resp.status == 403:
                 raise Exception(
                     "Direct link HTTP 403 (forbidden) – YouTube/CDN ne access block kiya.\n"
-                    "Koi normal public video try karo (age/geo restricted nahi)."
+                    "Ye ho sakta hai:\n"
+                    "• Anti-bot / login required video\n"
+                    "• Ya IP/geo ke wajah se restricted\n"
                 )
             if resp.status != 200:
                 raise Exception(f"HTTP {resp.status}")
@@ -251,7 +292,8 @@ async def start_cmd(client, m):
         "Note:\n"
         "• Sirf normal public videos kaam karenge.\n"
         "• Age/geo restricted / login required videos par error aa sakta hai "
-        "(ye YouTube ka restriction hai)."
+        "(ye YouTube ka restriction hai).\n"
+        "• Owner agar `YT_COOKIES` env me cookies de, to kuch restricted videos bhi chal sakte hain."
     )
 
 
@@ -269,9 +311,9 @@ async def help_cmd(client, m):
         "2. Bot tumhe video ka title + thumbnail dikhayegi.\n"
         "3. Phir 360p / 480p / 720p buttons se quality select karo.\n"
         "4. Selected quality me video Telegram pe mil jayega.\n\n"
-        "⚠️ Age‑restricted / country‑restricted / login‑required "
-        "videos ko bina cookies ke hum download nahi kar sakte.\n"
-        "Yeh YouTube ki restriction hai, bot ki nahi."
+        "⚠️ Age‑restricted / country‑restricted / 'you’re not a bot' "
+        "protected videos ko bina cookies ke hum download nahi kar sakte.\n"
+        "Ye YouTube ki side ki limit hai."
     )
 
 
@@ -287,7 +329,6 @@ async def yt_handler(client, m):
             "Example: `https://youtu.be/abc123`"
         )
 
-    # FIX: yahan string ki jagah enum use karna hai
     await m.reply_chat_action(enums.ChatAction.TYPING)
 
     try:
@@ -339,7 +380,7 @@ async def cb_handler(client, cq):
 
     if data.startswith("ytq_cancel|"):
         _, job_id = data.split("|", 1)
-        job = YT_JOBS.pop(job_id, None)
+        YT_JOBS.pop(job_id, None)
         await cq.answer("Cancelled.", show_alert=False)
         try:
             await cq.message.delete()
@@ -418,5 +459,3 @@ async def cb_handler(client, cq):
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     bot.run()
-
-  
