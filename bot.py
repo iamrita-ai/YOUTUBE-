@@ -375,6 +375,7 @@ async def yt_handler(client, m):
 async def cb_handler(client, cq):
     data = cq.data
 
+    # Cancel button
     if data.startswith("ytq_cancel|"):
         await cq.answer("Cancelled.", show_alert=False)
         try:
@@ -383,17 +384,18 @@ async def cb_handler(client, cq):
             pass
         return
 
+    # Quality button
     if data.startswith("ytq|"):
         try:
             _, video_id, q = data.split("|", 2)
         except ValueError:
             return await cq.answer("Invalid data.", show_alert=False)
 
-        # Dubara info nikaal rahe hain (stateless design)
         url = f"https://www.youtube.com/watch?v={video_id}"
 
         await cq.answer(f"{q}p selected, downloading…", show_alert=False)
 
+        # Dubara info nikaal rahe hain (stateless design)
         try:
             info = await extract_yt_info(url)
         except Exception as e:
@@ -456,7 +458,6 @@ async def cb_handler(client, cq):
                     os.remove(path)
                 except Exception:
                     pass
-            YT_JOBS.pop(job_id, None)
 
 
 if __name__ == "__main__":
