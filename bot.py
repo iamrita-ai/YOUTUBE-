@@ -376,8 +376,6 @@ async def cb_handler(client, cq):
     data = cq.data
 
     if data.startswith("ytq_cancel|"):
-        _, job_id = data.split("|", 1)
-        YT_JOBS.pop(job_id, None)
         await cq.answer("Cancelled.", show_alert=False)
         try:
             await cq.message.delete()
@@ -387,36 +385,44 @@ async def cb_handler(client, cq):
 
     if data.startswith("ytq|"):
         try:
-            _, job_id, q = data.split("|", 2)
+            _, video_id, q = data.split("|", 2)
         except ValueError:
             return await cq.answer("Invalid data.", show_alert=False)
 
-        job = YT_JOBS.get(job_id)
-        if not job:
-            return await cq.answer("Session expired. Naya link bhejo.", show_alert=True)
-
-        if cq.from_user.id != job["user_id"]:
-            return await cq.answer("Yeh tumhara session nahi hai.", show_alert=True)
-
-        fmt = job["formats"].get(q)
-        if not fmt:
-            return await cq.answer("Is quality ka format nahi mila.", show_alert=True)
+        # Dubara info nikaal rahe hain (stateless design)
+        url = f"https://www.youtube.com/watch?v={video_id}"
 
         await cq.answer(f"{q}p selected, downloading…", show_alert=False)
 
-        url = fmt["url"]
+        try:
+            info = await extract_yt_info(url)
+        except Exception as e:
+            return await cq.message.reply_text(
+                f"❌ YouTube se info nahi mil paayi (callback):\n`{e}`"
+            )
+
+        title = info.get("title") or "YouTube Video"
+        formats = pick_quality_formats(info)
+        if not formats or q not in formats:
+            return await cq.message.reply_text(
+                "❌ Is quality ka format ab available nahi hai.\n"
+                "Ho sakta hai YouTube ne kuch block kar diya ho."
+            )
+
+        fmt = formats[q]
+        fmt_url = fmt["url"]
         headers = fmt.get("http_headers") or {}
         ext = fmt.get("ext") or "mp4"
-        safe_title = "".join(c for c in job["title"] if c not in r'\/:*?\"<>|')
+        safe_title = "".join(c for c in title if c not in r'\/:*?\"<>|')
         file_name = f"{safe_title}_{q}p.{ext}"
         dest = os.path.join(DOWNLOAD_DIR, file_name)
-        full_title = f"{job['title']} [{q}p]"
+        full_title = f"{title} [{q}p]"
 
         status = await cq.message.reply_text("⬇️ Download shuru ho raha hai…")
 
         path = None
         try:
-            path = await download_direct(url, dest, status, full_title, headers=headers)
+            path = await download_direct(fmt_url, dest, status, full_title, headers=headers)
             await status.edit_text("📤 Telegram pe upload ho raha hai…")
 
             start = time.time()
