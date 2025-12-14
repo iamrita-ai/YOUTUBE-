@@ -24,7 +24,7 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # ===== OPTIONAL YT COOKIES (as raw text) + USER-AGENT =====
 
-YT_COOKIES_STR = os.environ.get("").strip()
+YT_COOKIES_STR = os.environ.get("YT_COOKIES").strip()
 
 def build_cookie_header(raw: str) -> str | None:
     """
